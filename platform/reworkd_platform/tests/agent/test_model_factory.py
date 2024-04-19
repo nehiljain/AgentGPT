@@ -19,7 +19,7 @@ def test_helicone_enabled_without_custom_api_key():
     settings = Settings(
         helicone_api_key="some_key",
         helicone_api_base="helicone_base",
-        openai_api_base="openai_base",
+        api_base_url="openai_base",
     )
 
     base, headers, use_helicone = get_base_and_headers(settings, model_settings, user)
@@ -51,7 +51,7 @@ def test_helicone_enabled_with_custom_api_key():
     )
     user = UserBase(id="user_id")
     settings = Settings(
-        openai_api_base="openai_base",
+        api_base_url="openai_base",
         helicone_api_key="some_key",
         helicone_api_base="helicone_base",
     )
@@ -81,7 +81,7 @@ def test_create_model(streaming, use_azure):
         max_tokens=100,
     )
 
-    settings.openai_api_base = (
+    settings.api_base_url = (
         "https://api.openai.com" if not use_azure else "https://oai.azure.com"
     )
     settings.openai_api_key = "key"
@@ -92,7 +92,7 @@ def test_create_model(streaming, use_azure):
     assert issubclass(result.__class__, ChatOpenAI)
 
     # Check if the required keys are set properly
-    assert result.openai_api_base == settings.openai_api_base
+    assert result.api_base_url == settings.api_base_url
     assert result.openai_api_key == settings.openai_api_key
     assert result.temperature == model_settings.temperature
     assert result.max_tokens == model_settings.max_tokens

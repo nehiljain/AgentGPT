@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional, Tuple, Type, Union
 
 from langchain.chat_models import AzureChatOpenAI, ChatOpenAI
+from langchain_community.chat_models import ChatOllama
 from pydantic import Field
 
 from reworkd_platform.schemas.agent import LLM_Model, ModelSettings
@@ -18,12 +19,19 @@ class WrappedChatOpenAI(ChatOpenAI):
 
 
 class WrappedAzureChatOpenAI(AzureChatOpenAI, WrappedChatOpenAI):
-    openai_api_base: str
+    api_base_url: str
     openai_api_version: str
     deployment_name: str
 
+class WrappedChatOllama(ChatOllama):
+    client: Any = Field(
+        default=None,
+        description="Meta private value but mypy will complain its missing",
+    )
+    max_tokens: int
+    model_name: LLM_Model = Field(alias="model")
 
-WrappedChat = Union[WrappedAzureChatOpenAI, WrappedChatOpenAI]
+WrappedChat = Union[WrappedAzureChatOpenAI, WrappedChatOpenAI, WrappedChatOllama]
 
 
 def create_model(
@@ -33,15 +41,13 @@ def create_model(
     streaming: bool = False,
     force_model: Optional[LLM_Model] = None,
 ) -> WrappedChat:
-    use_azure = (
-        not model_settings.custom_api_key and "azure" in settings.openai_api_base
-    )
-
+    """
+    Create a wrapped chat model based on the given settings and user.
+    """
     llm_model = force_model or model_settings.model
-    model: Type[WrappedChat] = WrappedChatOpenAI
     base, headers, use_helicone = get_base_and_headers(settings, model_settings, user)
     kwargs = {
-        "openai_api_base": base,
+        "api_base_url": base,
         "openai_api_key": model_settings.custom_api_key or settings.openai_api_key,
         "temperature": model_settings.temperature,
         "model": llm_model,
@@ -51,7 +57,7 @@ def create_model(
         "model_kwargs": {"user": user.email, "headers": headers},
     }
 
-    if use_azure:
+    if "azure" in settings.api_base_url and not model_settings.custom_api_key:
         model = WrappedAzureChatOpenAI
         deployment_name = llm_model.replace(".", "")
         kwargs.update(
@@ -59,12 +65,15 @@ def create_model(
                 "openai_api_version": settings.openai_api_version,
                 "deployment_name": deployment_name,
                 "openai_api_type": "azure",
-                "openai_api_base": base.rstrip("v1"),
+                "api_base_url": base.rstrip("v1"),
             }
         )
-
         if use_helicone:
             kwargs["model"] = deployment_name
+    elif "localhost" in settings.api_base_url and not model_settings.custom_api_key:
+        model = WrappedChatOllama
+    else:
+        model = WrappedChatOpenAI
 
     return model(**kwargs)  # type: ignore
 
@@ -79,7 +88,7 @@ def get_base_and_headers(
         else (
             "https://api.openai.com/v1"
             if model_settings.custom_api_key
-            else settings_.openai_api_base
+            else settings_.api_base_url
         )
     )
 
@@ -88,7 +97,7 @@ def get_base_and_headers(
             "Helicone-Auth": f"Bearer {settings_.helicone_api_key}",
             "Helicone-Cache-Enabled": "true",
             "Helicone-User-Id": user.id,
-            "Helicone-OpenAI-Api-Base": settings_.openai_api_base,
+            "Helicone-OpenAI-Api-Base": settings_.api_base_url,
         }
         if use_helicone
         else None
